@@ -184,7 +184,15 @@ def import_survey(driver, survey_text_file):
     sleep(5)
     print("Survey imported successfully")
 
+def install_chrome():
+    # Install Chrome
+    os.system('wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb')
+    os.system('dpkg -i google-chrome-stable_current_amd64.deb')
+    os.system('apt-get -f install -y')
+
 def automate_survey_creation(doc_path, username, password, survey_name):
+    install_chrome()
+
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
