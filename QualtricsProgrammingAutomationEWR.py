@@ -6,7 +6,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
+import chromedriver_autoinstaller
 from selenium.webdriver.chrome.options import Options
 from time import sleep
 from selenium.webdriver.support.ui import WebDriverWait
@@ -190,7 +190,10 @@ def automate_survey_creation(doc_path, username, password, survey_name):
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
+    # Automatically install the ChromeDriver binary and add it to PATH
+    chromedriver_autoinstaller.install()
+
+    driver = webdriver.Chrome(options=chrome_options)
     try:
         login_to_qualtrics(driver, username, password)
         create_survey(driver, survey_name)
