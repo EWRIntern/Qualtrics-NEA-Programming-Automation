@@ -1,4 +1,4 @@
 streamlit==1.35.0
 selenium==4.22.0
 aspose-words==24.7.0
-webdriver-manager
+chromedriver-autoinstaller
