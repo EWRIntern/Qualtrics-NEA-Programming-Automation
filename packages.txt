@@ -1,0 +1,4 @@
+wget
+unzip
+libnss3
+libgconf-2-4
