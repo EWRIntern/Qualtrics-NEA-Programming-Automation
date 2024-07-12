@@ -6,12 +6,10 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service as ChromeService
-import chromedriver_autoinstaller
 from selenium.webdriver.chrome.options import Options
 from time import sleep
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import os
+import subprocess
 
 # Functions to process text
 def read_text_file(file_path):
@@ -149,37 +147,27 @@ def login_to_qualtrics(driver, username, password):
     print("Logged in to Qualtrics successfully")
 
 def create_survey(driver, survey_name):
-    # Click the "Create a new project" button by data-testid attribute
     driver.find_element(By.CSS_SELECTOR, 'button[data-testid="profile-data-create-new-button"]').click()
     sleep(2)
-    # Click the "Survey" button by data-testid attribute
     driver.find_element(By.CSS_SELECTOR, 'button[data-testid="Catalog.Offering.Survey"]').click()
     sleep(2)
-    # Click the "Get started" button by data-testid attribute
     driver.find_element(By.CSS_SELECTOR, 'button[data-testid="Catalog.DetailsPane.CallToAction"]').click()
     sleep(2)
-    # Enter the survey name
     driver.find_element(By.CSS_SELECTOR, 'input[data-testid="Catalog.GetStartedFlow.Name"]').send_keys(survey_name)
-    # Click the "Create project" button by data-testid attribute
     driver.find_element(By.CSS_SELECTOR, 'button[data-testid="Catalog.GetStartedFlow.Create"]').click()
     sleep(5)
     print(f"Survey '{survey_name}' created successfully")
 
 def import_survey(driver, survey_text_file):
-    # Navigate to the Tools -> Import/Export -> Import survey option
     driver.find_element(By.ID, 'builder-tools-menu').click()
     sleep(2)
     driver.find_element(By.ID, 'import-export-menu').click()
     sleep(2)
     driver.find_element(By.ID, 'import-survey-tool').click()
     sleep(2)
-    
-    # Upload the generated text file
     file_input = driver.find_element(By.CSS_SELECTOR, 'input[type="file"]')
     file_input.send_keys(survey_text_file)
     sleep(2)
-    
-    # Confirm the upload
     driver.find_element(By.ID, 'importButton').click()
     sleep(5)
     print("Survey imported successfully")
@@ -190,38 +178,33 @@ def install_chrome():
     os.system('dpkg -i google-chrome-stable_current_amd64.deb')
     os.system('apt-get -f install -y')
 
+def install_chromedriver():
+    # Install ChromeDriver
+    os.system('wget https://chromedriver.storage.googleapis.com/$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE)/chromedriver_linux64.zip')
+    os.system('unzip chromedriver_linux64.zip -d /usr/local/bin/')
+
 def automate_survey_creation(doc_path, username, password, survey_name):
     install_chrome()
+    install_chromedriver()
 
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # Automatically install the ChromeDriver binary and add it to PATH
-    chromedriver_autoinstaller.install()
-
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Chrome(service=ChromeService("/usr/local/bin/chromedriver"), options=chrome_options)
     try:
         login_to_qualtrics(driver, username, password)
         create_survey(driver, survey_name)
-        
-        # Process the DOCX file with Aspose.Words
         doc = aw.Document(doc_path)
         doc.save("converted_text.txt")
-        
-        # Process the text file
         input_text = read_text_file("converted_text.txt")
         converted_text = convert_to_qualtrics_format(input_text)
         cleaned_text = remove_blank_lines(converted_text)
         cleaned_text = ''.join(filter(lambda x: x in string.printable, cleaned_text))
-        
-        # Save the converted text to a file
         survey_text_file = os.path.abspath('tags_text_conv.txt')
         with open(survey_text_file, 'w', encoding='utf-8') as output_file:
             output_file.write(cleaned_text)
-        
-        # Import the survey text file into Qualtrics
         import_survey(driver, survey_text_file)
     finally:
         driver.quit()
@@ -237,7 +220,6 @@ if st.button("Create Survey"):
     if username and password and survey_name and doc_file:
         with open("uploaded_file.docx", "wb") as f:
             f.write(doc_file.getbuffer())
-        
         automate_survey_creation("uploaded_file.docx", username, password, survey_name)
         st.success("Survey created and imported successfully!")
     else:
