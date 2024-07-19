@@ -2,38 +2,31 @@ import streamlit as st
 import aspose.words as aw
 import re
 import string
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.chrome.options import Options
-from time import sleep
-import os
-import subprocess
 
-# Functions to process text
 def read_text_file(file_path):
     unwanted_start_line = "Created with an evaluation copy of Aspose.Words. To remove all limitations, you can use Free Temporary License https://products.aspose.com/words/temporary-license/"
+    unwanted_line = "This document was truncated here because it was created in the Evaluation Mode."
     unwanted_end_line = "Evaluation Only. Created with Aspose.Words. Copyright 2003-2024 Aspose Pty Ltd."
 
     with open(file_path, 'r', encoding='utf-8') as file:
         lines = file.readlines()
 
     # Remove the unwanted lines
-    lines = [line for line in lines if unwanted_start_line not in line and unwanted_end_line not in line]
+    lines = [line for line in lines if unwanted_start_line not in line and unwanted_end_line not in line and unwanted_line not in line]
     
     return ''.join(lines)
 
 def identify_question_type(question_text):
-    if "matrix" in question_text.lower():
+    text = question_text.lower()
+    if "matrix" in text:
         return "Matrix"
-    elif "open-end" in question_text.lower() or "text" in question_text.lower():
+    elif "open-end" in text:
         return "TextEntry"
-    elif "rank order" in question_text.lower():
+    elif "rank order" in text:
         return "RankOrder"
-    elif "constant sum" in question_text.lower():
+    elif "constant sum" in text:
         return "ConstantSum"
-    elif "descriptive block" in question_text.lower():
+    elif "[db]" in text:
         return "DB"
     else:
         return "MC"
@@ -48,11 +41,9 @@ def process_choices(choices, question_type):
 
     for choice in choices:
         if question_type == "Matrix":
-            # Remove number sequences
             cleaned_choice = number_sequence_pattern.sub('', choice).strip()
             processed_choices.append(cleaned_choice)
         else:
-            # Remove trailing numbers
             if trailing_number_pattern.match(choice.split()[-1]):
                 processed_choices.append(' '.join(choice.split()[:-1]).strip())
             else:
@@ -64,12 +55,13 @@ def convert_to_qualtrics_format(input_text):
     lines = input_text.strip().split('\n')
     qualtrics_lines = ['[[AdvancedFormat]]']
     question_counter = 0
-    question_text = ""
+    intro_counter = 0
     choices = []
     matrix_statements = []
     matrix_scale_points = []
     question_type = None
     matrix_answer_mode = False
+    previous_line_was_db = False
 
     for i, line in enumerate(lines):
         line = line.strip()
@@ -78,7 +70,8 @@ def convert_to_qualtrics_format(input_text):
             continue
 
         # Identify if the current line is a new question
-        if re.match(r'\d+\.', line):
+        if re.match(r'^\d+\.', line):
+            # If there are pending choices or matrix items, append them before processing new question
             if question_counter > 0:
                 if choices:
                     qualtrics_lines.append("[[Choices]]")
@@ -96,14 +89,13 @@ def convert_to_qualtrics_format(input_text):
             question_text = line
             question_type = identify_question_type(question_text)
             cleaned_question_text = remove_square_bracket_content(question_text)
-            if question_type == "DB":
-                qualtrics_lines.append('[[DB]]')
-                qualtrics_lines.append(cleaned_question_text.split(" ", 1)[1])
-            else:
+            if question_type != "DB":
                 qualtrics_lines.append(f'[[Question:{question_type}]]')
-                qualtrics_lines.append(cleaned_question_text.split(" ", 1)[1])
-            question_counter += 1
+                question_counter += 1
+                qualtrics_lines.append(f'[[ID:Q{question_counter}]]')
+                qualtrics_lines.append(cleaned_question_text)
             matrix_answer_mode = False
+            previous_line_was_db = False
 
         elif re.match(r'\[IF Q\d', line):
             qualtrics_lines.append(f'[[{line}]]')
@@ -117,6 +109,27 @@ def convert_to_qualtrics_format(input_text):
                     matrix_statements.append(line)
             else:
                 choices.append(line)
+
+        # Process DB block separately to ensure it doesn't interrupt current question
+        if "[db]" in line.lower():
+            if choices:
+                qualtrics_lines.append("[[Choices]]")
+                qualtrics_lines.extend(process_choices(choices, question_type))
+                choices = []
+            if matrix_statements and matrix_scale_points:
+                qualtrics_lines.append("[[Answers]]")
+                qualtrics_lines.extend(matrix_statements)
+                qualtrics_lines.append("[[Choices]]")
+                qualtrics_lines.extend(process_choices(matrix_scale_points, question_type))
+                matrix_statements = []
+                matrix_scale_points = []
+            qualtrics_lines.append('[[PageBreak]]')
+            if not previous_line_was_db:
+                intro_counter += 1
+                qualtrics_lines.append('[[Question:DB]]')
+                qualtrics_lines.append(f'[[ID:Intro{intro_counter}]]')
+                qualtrics_lines.append(remove_square_bracket_content(line))
+                previous_line_was_db = True
     
     # Append any remaining choices or matrix statements for the last question
     if choices:
@@ -129,98 +142,54 @@ def convert_to_qualtrics_format(input_text):
         qualtrics_lines.extend(process_choices(matrix_scale_points, question_type))
     qualtrics_lines.append('[[PageBreak]]')
     
-    return '\n'.join(qualtrics_lines)
+    # Remove lines ending with '[DB]'
+    cleaned_qualtrics_lines = [line for line in qualtrics_lines if not line.strip().endswith('[DB]')]
+
+    return '\n'.join(cleaned_qualtrics_lines)
 
 def remove_blank_lines(text):
     lines = text.split('\n')
     cleaned_lines = [line for line in lines if line.strip()]
     return '\n'.join(cleaned_lines)
 
-# Selenium functions to interact with Qualtrics
-def login_to_qualtrics(driver, username, password):
-    driver.get("https://nea.co1.qualtrics.com/login")
-    sleep(2)
-    driver.find_element(By.ID, 'UserName').send_keys(username)
-    driver.find_element(By.ID, 'UserPassword').send_keys(password)
-    driver.find_element(By.ID, 'loginButton').click()
-    sleep(5)
-    print("Logged in to Qualtrics successfully")
+def remove_initial_content(text):
+    # Find the position of the first question tag
+    first_question_match = re.search(r'\[\[Question:(MC|DB|Matrix)\]\]', text)
+    if first_question_match:
+        first_question_index = first_question_match.start()
+        return '[[AdvancedFormat]]\n' + text[first_question_index:]
+    else:
+        return text
 
-def create_survey(driver, survey_name):
-    driver.find_element(By.CSS_SELECTOR, 'button[data-testid="profile-data-create-new-button"]').click()
-    sleep(2)
-    driver.find_element(By.CSS_SELECTOR, 'button[data-testid="Catalog.Offering.Survey"]').click()
-    sleep(2)
-    driver.find_element(By.CSS_SELECTOR, 'button[data-testid="Catalog.DetailsPane.CallToAction"]').click()
-    sleep(2)
-    driver.find_element(By.CSS_SELECTOR, 'input[data-testid="Catalog.GetStartedFlow.Name"]').send_keys(survey_name)
-    driver.find_element(By.CSS_SELECTOR, 'button[data-testid="Catalog.GetStartedFlow.Create"]').click()
-    sleep(5)
-    print(f"Survey '{survey_name}' created successfully")
+def main():
+    st.title('Qualtrics Programming Automation!')
 
-def import_survey(driver, survey_text_file):
-    driver.find_element(By.ID, 'builder-tools-menu').click()
-    sleep(2)
-    driver.find_element(By.ID, 'import-export-menu').click()
-    sleep(2)
-    driver.find_element(By.ID, 'import-survey-tool').click()
-    sleep(2)
-    file_input = driver.find_element(By.CSS_SELECTOR, 'input[type="file"]')
-    file_input.send_keys(survey_text_file)
-    sleep(2)
-    driver.find_element(By.ID, 'importButton').click()
-    sleep(5)
-    print("Survey imported successfully")
+    uploaded_file = st.file_uploader("Upload a DOCX file", type="docx")
+    output_file_name = st.text_input("Enter the output file name:", "output_file.txt")
 
-def install_chrome():
-    # Install Chrome
-    os.system('wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb')
-    os.system('dpkg -i google-chrome-stable_current_amd64.deb')
-    os.system('apt-get -f install -y')
+    if uploaded_file is not None and output_file_name:
+        # Save the uploaded DOCX file to a temporary location
+        with open("uploaded_input.docx", "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
-def install_chromedriver():
-    # Install ChromeDriver
-    os.system('wget https://chromedriver.storage.googleapis.com/$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE)/chromedriver_linux64.zip')
-    os.system('unzip chromedriver_linux64.zip -d /usr/local/bin/')
+        # Convert DOCX to text using Aspose.Words
+        doc = aw.Document("uploaded_input.docx")
+        doc.save("Intermediate File - Do not use this to upload.txt")
 
-def automate_survey_creation(doc_path, username, password, survey_name):
-    install_chrome()
-    install_chromedriver()
-
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(service=ChromeService("/usr/local/bin/chromedriver"), options=chrome_options)
-    try:
-        login_to_qualtrics(driver, username, password)
-        create_survey(driver, survey_name)
-        doc = aw.Document(doc_path)
-        doc.save("converted_text.txt")
-        input_text = read_text_file("converted_text.txt")
+        # Read and process the text file
+        input_text = read_text_file("Intermediate File - Do not use this to upload.txt")
         converted_text = convert_to_qualtrics_format(input_text)
         cleaned_text = remove_blank_lines(converted_text)
-        cleaned_text = ''.join(filter(lambda x: x in string.printable, cleaned_text))
-        survey_text_file = os.path.abspath('tags_text_conv.txt')
-        with open(survey_text_file, 'w', encoding='utf-8') as output_file:
-            output_file.write(cleaned_text)
-        import_survey(driver, survey_text_file)
-    finally:
-        driver.quit()
+        final_text = remove_initial_content(cleaned_text)
+        final_text = ''.join(filter(lambda x: x in string.printable, final_text))
+        
+        if st.button("Convert into desired text file"):
+            # Save the final text to the specified output file
+            with open(output_file_name, "w", encoding='utf-8') as output_file:
+                output_file.write(final_text)
 
-# Streamlit app
-st.title("Qualtrics Survey Automation")
-username = st.text_input("Qualtrics Username")
-password = st.text_input("Qualtrics Password", type="password")
-survey_name = st.text_input("Survey Name")
-doc_file = st.file_uploader("Upload DOCX File", type=["docx"])
+            st.success(f"File '{output_file_name}' has been created successfully.")
+            st.download_button("Download the file", final_text, file_name=output_file_name)
 
-if st.button("Create Survey"):
-    if username and password and survey_name and doc_file:
-        with open("uploaded_file.docx", "wb") as f:
-            f.write(doc_file.getbuffer())
-        automate_survey_creation("uploaded_file.docx", username, password, survey_name)
-        st.success("Survey created and imported successfully!")
-    else:
-        st.error("Please fill all the fields and upload the DOCX file.")
+if __name__ == "__main__":
+    main()
