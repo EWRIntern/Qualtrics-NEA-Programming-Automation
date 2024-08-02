@@ -1,5 +1,4 @@
 import streamlit as st
-import aspose.words as aw
 import re
 import string
 
@@ -164,20 +163,16 @@ def remove_initial_content(text):
 def main():
     st.title('Qualtrics Programming Automation!')
 
-    uploaded_file = st.file_uploader("Upload a DOCX file", type="docx")
+    uploaded_file = st.file_uploader("Upload a Text file", type="txt")
     output_file_name = st.text_input("Enter the output file name:", "output_file.txt")
 
     if uploaded_file is not None and output_file_name:
-        # Save the uploaded DOCX file to a temporary location
-        with open("uploaded_input.docx", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        # Convert DOCX to text using Aspose.Words
-        doc = aw.Document("uploaded_input.docx")
-        doc.save("Intermediate File - Do not use this to upload.txt")
+        # # Save the uploaded TXT file to a temporary location
+        # with open("uploaded_input.txt", "wb") as f:
+        #     f.write(uploaded_file.getbuffer())
 
         # Read and process the text file
-        input_text = read_text_file("Intermediate File - Do not use this to upload.txt")
+        input_text = read_text_file("uploaded_file.txt")
         converted_text = convert_to_qualtrics_format(input_text)
         cleaned_text = remove_blank_lines(converted_text)
         final_text = remove_initial_content(cleaned_text)
