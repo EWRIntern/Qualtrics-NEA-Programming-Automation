@@ -167,12 +167,12 @@ def main():
     output_file_name = st.text_input("Enter the output file name:", "output_file.txt")
 
     if uploaded_file is not None and output_file_name:
-        # # Save the uploaded TXT file to a temporary location
-        # with open("uploaded_input.txt", "wb") as f:
-        #     f.write(uploaded_file.getbuffer())
+        # Save the uploaded TXT file to a temporary location
+        with open("uploaded_input.txt", "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
         # Read and process the text file
-        input_text = read_text_file("uploaded_file.txt")
+        input_text = read_text_file("uploaded_input.txt")
         converted_text = convert_to_qualtrics_format(input_text)
         cleaned_text = remove_blank_lines(converted_text)
         final_text = remove_initial_content(cleaned_text)
